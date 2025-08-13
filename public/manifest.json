@@ -4,7 +4,12 @@
   "version": "1.0",
   "description": "Build config files by selecting fields from a webpage.",
   "action": {
-    "default_popup": "popup.html"
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "logo-blue.svg",
+      "48": "logo-blue.svg",
+      "128": "logo-blue.svg"
+    }
   },
   "permissions": ["activeTab", "scripting", "storage"],
   "host_permissions": ["<all_urls>"],

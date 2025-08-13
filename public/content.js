@@ -367,6 +367,15 @@ function crawlPageData(selectors) {
             extractedValue = element.textContent || element.innerText || '';
             // Remove the "Selected: field" text that our extension adds
             extractedValue = extractedValue.replace(new RegExp(`Selected: ${field}`, 'gi'), '').trim();
+            
+            // Special cleaning for price field
+            if (field === 'price') {
+              // Extract just the price amount (e.g., "$2,499.00" from "Now $2,499.00Per Square Foot...")
+              const priceMatch = extractedValue.match(/\$[\d,]+\.?\d*/);
+              if (priceMatch) {
+                extractedValue = priceMatch[0];
+              }
+            }
           }
           
           data.extractedData[field] = extractedValue;
@@ -392,6 +401,12 @@ function crawlPageData(selectors) {
     console.log(`[content.js] Using URL-based SKU: ${urlSku}`);
   } else if (!data.extractedData.sku || data.extractedData.sku === '') {
     data.extractedData.sku = autoDetectSKU();
+  }
+  
+  // Clean up SKU if it has "Model #" prefix (common on Lowes)
+  if (data.extractedData.sku && data.extractedData.sku.includes('Model #')) {
+    data.extractedData.sku = data.extractedData.sku.replace('Model #', '').trim();
+    console.log(`[content.js] Cleaned SKU: ${data.extractedData.sku}`);
   }
   
   // Format attribute section 1 data into structured tech_specs
@@ -490,10 +505,7 @@ function formatSpecification(specText) {
   
   const techSpecs = {};
   
-  // Generic approach: Look for patterns like "Key: Value" or "Key Value"
-  // This works for any website and any type of specifications
-  
-  // Method 1: Look for colon-separated key-value pairs
+  // Method 1: Look for colon-separated key-value pairs first
   const colonPattern = /([^:]+):\s*([^:]+?)(?=\s+[^:]+:|$)/g;
   let match;
   
@@ -506,54 +518,65 @@ function formatSpecification(specText) {
     }
   }
   
-  // Method 2: Look for common specification patterns
-  // Split by capital letters that likely indicate new specifications
-  const parts = cleaned.split(/(?=[A-Z][a-z])/);
+  // Method 2: Handle concatenated text patterns like "Display TypeLED" -> "Display Type: LED"
+  // This is the main issue we're solving
   
-  parts.forEach((part, index) => {
-    part = part.trim();
-    if (part.length > 0 && index > 0) { // Skip the first part (usually headers)
-      
-      // Look for patterns like "Key Value" where Key starts with capital letter
-      const words = part.split(/\s+/);
-      if (words.length >= 2) {
-        // Try to find where the key ends and value begins
-        for (let i = 1; i < words.length; i++) {
-          const potentialKey = words.slice(0, i).join(' ');
-          const potentialValue = words.slice(i).join(' ');
-          
-          // Check if this looks like a key-value pair
-          if (potentialKey.length > 0 && potentialValue.length > 0) {
-            // Skip if it's just a single word or very short
-            if (potentialKey.split(' ').length >= 1 && potentialValue.length > 1) {
-              techSpecs[potentialKey] = potentialValue;
-              console.log(`✅ Extracted (pattern): ${potentialKey}: ${potentialValue}`);
-              break; // Take the first reasonable split
-            }
-          }
-        }
-      }
-    }
-  });
-  
-  // Method 3: Look for specific common patterns that might be concatenated
-  const commonPatterns = [
-    // Common product specification patterns
-    /([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s*([0-9.]+(?:\s*[a-zA-Z]+)?)/g,
-    /([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)/g
+  // Define common specification patterns that we know exist
+  const specPatterns = [
+    // Display specs
+    { pattern: /Display\s+Type([A-Z][a-z]+)/g, key: 'Display Type', valueExtractor: (match) => match[1] },
+    { pattern: /Display\s+TypeLED/g, key: 'Display Type', valueExtractor: () => 'LED' },
+    { pattern: /Resolution([^A-Z]+)/g, key: 'Resolution', valueExtractor: (match) => match[1].trim() },
+    { pattern: /ResolutionFull\s+HD\s*\(1080p\)/g, key: 'Resolution', valueExtractor: () => 'Full HD (1080p)' },
+    { pattern: /Screen\s+Size\s+Class([^A-Z]+)/g, key: 'Screen Size Class', valueExtractor: (match) => match[1].trim() },
+    { pattern: /High\s+Dynamic\s+Range\s*\(HDR\)([A-Z][a-z]+)/g, key: 'High Dynamic Range (HDR)', valueExtractor: (match) => match[1] },
+    { pattern: /Panel\s+Type([A-Z][a-z\s]+)/g, key: 'Panel Type', valueExtractor: (match) => match[1].trim() },
+    { pattern: /Backlight\s+Type([A-Z][a-z\s]+)/g, key: 'Backlight Type', valueExtractor: (match) => match[1].trim() },
+    { pattern: /Refresh\s+Rate([0-9]+[A-Za-z]+)/g, key: 'Refresh Rate', valueExtractor: (match) => match[1].replace(/[A-Z][a-z]+$/, '') },
+    { pattern: /Smart\s+Platform([A-Z][a-z\s]+)/g, key: 'Smart Platform', valueExtractor: (match) => match[1].trim() + ' TV' },
+    { pattern: /Featured\s+Streaming\s+Services([^A-Z]+)/g, key: 'Featured Streaming Services', valueExtractor: (match) => match[1].trim() },
+    { pattern: /Number\s+of\s+HDMI\s+Inputs\s*\(Total\)([0-9]+)/g, key: 'Number of HDMI Inputs (Total)', valueExtractor: (match) => match[1] },
+    { pattern: /TV\s+Tuner\s+Type([^A-Z]+)/g, key: 'TV Tuner Type', valueExtractor: (match) => match[1].trim() },
+    { pattern: /Works\s+With([A-Z][a-z\s]+)/g, key: 'Works With', valueExtractor: (match) => match[1].trim() + ' Alexa' },
+    { pattern: /Voice\s+Assistant([A-Z][a-z\s]+)/g, key: 'Voice Assistant', valueExtractor: (match) => 'Built-in ' + match[1].trim() + ' Alexa' },
+    
+    // Dimension specs
+    { pattern: /Product\s+Height\s+With\s+Stand([0-9.]+[^A-Z]+)/g, key: 'Product Height With Stand', valueExtractor: (match) => match[1].trim() },
+    { pattern: /Product\s+Width([0-9.]+[^A-Z]+)/g, key: 'Product Width', valueExtractor: (match) => match[1].trim() },
+    { pattern: /Product\s+Depth\s+With\s+Stand([0-9.]+[^A-Z]+)/g, key: 'Product Depth With Stand', valueExtractor: (match) => match[1].trim() },
+    { pattern: /Product\s+Height\s+Without\s+Stand([0-9.]+[^A-Z]+)/g, key: 'Product Height Without Stand', valueExtractor: (match) => match[1].trim() },
+    { pattern: /Product\s+Depth\s+Without\s+Stand([0-9.]+[^A-Z]+)/g, key: 'Product Depth Without Stand', valueExtractor: (match) => match[1].trim() },
+    { pattern: /Product\s+Weight\s+With\s+Stand([0-9.]+[^A-Z]+)/g, key: 'Product Weight With Stand', valueExtractor: (match) => match[1].trim() },
+    { pattern: /Product\s+Weight\s+Without\s+Stand([0-9.]+[^A-Z]+)/g, key: 'Product Weight Without Stand', valueExtractor: (match) => match[1].trim() },
+    { pattern: /Stand\s+Width([0-9.]+[^A-Z]+)/g, key: 'Stand Width', valueExtractor: (match) => match[1].trim() },
+    { pattern: /Stand\s+Depth([0-9.]+[^A-Z]+)/g, key: 'Stand Depth', valueExtractor: (match) => match[1].trim() },
+    { pattern: /Adjustable\s+Stand\s+Width([A-Z][a-z]+)/g, key: 'Adjustable Stand Width', valueExtractor: (match) => match[1] }
   ];
   
-  commonPatterns.forEach(pattern => {
+  // Apply each pattern to find matches
+  specPatterns.forEach(spec => {
     let patternMatch;
-    while ((patternMatch = pattern.exec(cleaned)) !== null) {
-      const key = patternMatch[1].trim();
-      const value = patternMatch[2].trim();
-      if (key && value && !techSpecs[key]) {
-        techSpecs[key] = value;
-        console.log(`✅ Extracted (regex): ${key}: ${value}`);
+    while ((patternMatch = spec.pattern.exec(cleaned)) !== null) {
+      const value = spec.valueExtractor(patternMatch);
+      if (value && !techSpecs[spec.key]) {
+        techSpecs[spec.key] = value;
+        console.log(`✅ Extracted (pattern): ${spec.key}: ${value}`);
       }
     }
   });
+  
+  // Method 3: Fallback - look for any remaining patterns with numbers and units
+  const fallbackPattern = /([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s+([0-9.]+(?:\s*[a-zA-Z]+)?)/g;
+  let fallbackMatch;
+  
+  while ((fallbackMatch = fallbackPattern.exec(cleaned)) !== null) {
+    const key = fallbackMatch[1].trim();
+    const value = fallbackMatch[2].trim();
+    if (key && value && !techSpecs[key] && key.length > 3) {
+      techSpecs[key] = value;
+      console.log(`✅ Extracted (fallback): ${key}: ${value}`);
+    }
+  }
   
   console.log('📊 Final tech_specs:', techSpecs);
   return techSpecs;
