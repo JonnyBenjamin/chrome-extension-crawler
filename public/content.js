@@ -394,9 +394,10 @@ function crawlPageData(selectors) {
     data.extractedData.sku = autoDetectSKU();
   }
   
-  // Format specification data
+  // Format specification data into structured tech_specs
   if (data.extractedData.specification) {
-    data.extractedData.specification = formatSpecification(data.extractedData.specification);
+    data.extractedData.tech_specs = formatSpecification(data.extractedData.specification);
+    delete data.extractedData.specification; // Remove the old unstructured field
   }
   
   return data;
@@ -459,39 +460,104 @@ function autoDetectSKU() {
 }
 
 function formatSpecification(specText) {
-  if (!specText) return '';
+  if (!specText) return {};
   
-  // Clean up the text
+  // Clean up the text first
   let cleaned = specText
     .replace(/\s+/g, ' ') // Replace multiple spaces with single space
-    .replace(/([A-Z][a-z]+)([A-Z][a-z]+)/g, '$1 $2') // Add space between camelCase
-    .replace(/(\d+)([A-Za-z])/g, '$1 $2') // Add space between number and letter
-    .replace(/([A-Za-z])(\d+)/g, '$1 $2') // Add space between letter and number
+    .replace(/\n/g, ' ') // Replace newlines with spaces
     .trim();
   
-  // Split by common specification separators
-  const lines = cleaned.split(/(?<=[.!?])\s+|(?<=[A-Z])\s+(?=[A-Z][a-z])/).filter(line => line.trim().length > 0);
-  
-  // Format each line
-  const formattedLines = lines.map(line => {
-    // Clean up the line
-    let formatted = line.trim();
+  // Common specification patterns for Best Buy and other e-commerce sites
+  const specPatterns = [
+    // Display specs
+    /display\s+type\s*:\s*([^,]+)/i,
+    /resolution\s*:\s*([^,]+)/i,
+    /screen\s+size\s+class\s*:\s*([^,]+)/i,
+    /high\s+dynamic\s+range\s*\(hdr\)\s*:\s*([^,]+)/i,
+    /panel\s+type\s*:\s*([^,]+)/i,
+    /backlight\s+type\s*:\s*([^,]+)/i,
+    /refresh\s+rate\s*:\s*([^,]+)/i,
     
-    // Capitalize first letter of each sentence
-    if (formatted.length > 0) {
-      formatted = formatted.charAt(0).toUpperCase() + formatted.slice(1).toLowerCase();
+    // Smart features
+    /smart\s+platform\s*:\s*([^,]+)/i,
+    /featured\s+streaming\s+services\s*:\s*([^,]+)/i,
+    
+    // Connectivity
+    /number\s+of\s+hdmi\s+inputs\s*\(total\)\s*:\s*([^,]+)/i,
+    /tv\s+tuner\s+type\s*:\s*([^,]+)/i,
+    
+    // Voice assistants
+    /works\s+with\s+([^,]+)/i,
+    /voice\s+assistant\s*:\s*([^,]+)/i,
+    
+    // General patterns
+    /([^:]+):\s*([^,]+)/g
+  ];
+  
+  const techSpecs = {};
+  
+  // Try to extract structured data first
+  for (let i = 0; i < specPatterns.length - 1; i++) {
+    const pattern = specPatterns[i];
+    const match = cleaned.match(pattern);
+    if (match) {
+      const key = match[1]?.trim() || '';
+      const value = match[2]?.trim() || '';
+      if (key && value) {
+        // Clean up the key name
+        const cleanKey = key
+          .replace(/\s+/g, ' ')
+          .replace(/\b\w/g, l => l.toUpperCase())
+          .trim();
+        techSpecs[cleanKey] = value;
+      }
     }
-    
-    // Add proper spacing for common patterns
-    formatted = formatted
-      .replace(/(\d+)([A-Za-z])/g, '$1 $2') // Add space between number and letter
-      .replace(/([A-Za-z])(\d+)/g, '$1 $2') // Add space between letter and number
-      .replace(/([A-Z])([a-z]+)([A-Z])/g, '$1$2 $3'); // Add space between camelCase words
-    
-    return formatted;
-  });
+  }
   
-  return formattedLines.join('\n');
+  // If we didn't find structured data, try to parse the text more intelligently
+  if (Object.keys(techSpecs).length === 0) {
+    // Split by common separators and try to find key-value pairs
+    const parts = cleaned.split(/(?<=[.!?])\s+|(?<=[A-Z])\s+(?=[A-Z][a-z])/);
+    
+    parts.forEach(part => {
+      part = part.trim();
+      if (part.length > 0) {
+        // Look for patterns like "key: value" or "key value"
+        const colonMatch = part.match(/^([^:]+):\s*(.+)$/);
+        if (colonMatch) {
+          const key = colonMatch[1].trim();
+          const value = colonMatch[2].trim();
+          if (key && value) {
+            techSpecs[key] = value;
+          }
+        } else {
+          // Try to split by common words that indicate a specification
+          const specWords = ['display', 'resolution', 'screen', 'size', 'panel', 'refresh', 'smart', 'platform', 'hdmi', 'tuner', 'voice', 'assistant'];
+          for (const word of specWords) {
+            if (part.toLowerCase().includes(word)) {
+              // Extract the value after the spec word
+              const regex = new RegExp(`${word}[^a-zA-Z]*([^.!?]+)`, 'i');
+              const match = part.match(regex);
+              if (match) {
+                const value = match[1].trim();
+                if (value) {
+                  techSpecs[word.charAt(0).toUpperCase() + word.slice(1)] = value;
+                }
+              }
+            }
+          }
+        }
+      }
+    });
+  }
+  
+  // If still no structured data, return the cleaned text as a fallback
+  if (Object.keys(techSpecs).length === 0) {
+    return { "Raw Specifications": cleaned };
+  }
+  
+  return techSpecs;
 }
 
 function addOutline(e) {
