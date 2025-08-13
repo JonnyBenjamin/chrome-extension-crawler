@@ -5,6 +5,7 @@
     "scripts": {
         "dev": "vite",
         "build": "vite build && node fix-paths.js",
+        "watch": "vite build --watch && node fix-paths.js",
         "preview": "vite preview"
     },
     "dependencies": {

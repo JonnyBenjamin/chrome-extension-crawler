@@ -6,7 +6,9 @@ export default function App() {
     sku: '',
     price: '',
     image: '',
-    specification: ''
+    productName: '',
+    attributeSection1: '',
+    attributeSection2: ''
   });
 
   useEffect(() => {
@@ -107,7 +109,9 @@ export default function App() {
       sku: '',
       price: '',
       image: '',
-      specification: ''
+      productName: '',
+      attributeSection1: '',
+      attributeSection2: ''
     });
     setUrls(['']);
     
@@ -228,10 +232,15 @@ export default function App() {
           </svg>
           Data Selectors
         </label>
-      {['sku', 'price', 'image', 'specification'].map((key) => (
+      {['sku', 'price', 'image', 'productName', 'attributeSection1', 'attributeSection2'].map((key) => (
         <div key={key} className="flex gap-3 mb-4 items-end">
           <div className="flex-1">
-            <label className="block text-xs font-semibold text-slate-600 mb-2 capitalize tracking-wide">{key}</label>
+            <label className="block text-xs font-semibold text-slate-600 mb-2 capitalize tracking-wide">
+              {key === 'productName' ? 'Product Name' : 
+               key === 'attributeSection1' ? 'Attribute Section 1' : 
+               key === 'attributeSection2' ? 'Attribute Section 2' : 
+               key}
+            </label>
             <input
               type="text"
               placeholder={`Click "Select" to capture ${key} element`}

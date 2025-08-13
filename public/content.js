@@ -394,10 +394,26 @@ function crawlPageData(selectors) {
     data.extractedData.sku = autoDetectSKU();
   }
   
-  // Format specification data into structured tech_specs
-  if (data.extractedData.specification) {
-    data.extractedData.tech_specs = formatSpecification(data.extractedData.specification);
-    delete data.extractedData.specification; // Remove the old unstructured field
+  // Format attribute section 1 data into structured tech_specs
+  if (data.extractedData.attributeSection1) {
+    console.log('🔍 Raw attribute section 1 text:', data.extractedData.attributeSection1);
+    console.log('🔍 Raw attribute section 1 length:', data.extractedData.attributeSection1.length);
+    data.extractedData.tech_specs = formatSpecification(data.extractedData.attributeSection1);
+    console.log('✅ Parsed tech_specs:', data.extractedData.tech_specs);
+    delete data.extractedData.attributeSection1; // Remove the old unstructured field
+  } else {
+    console.log('❌ No attribute section 1 data found');
+  }
+  
+  // Format attribute section 2 data into structured tech_specs_2
+  if (data.extractedData.attributeSection2) {
+    console.log('🔍 Raw attribute section 2 text:', data.extractedData.attributeSection2);
+    console.log('🔍 Raw attribute section 2 length:', data.extractedData.attributeSection2.length);
+    data.extractedData.tech_specs_2 = formatSpecification(data.extractedData.attributeSection2);
+    console.log('✅ Parsed tech_specs_2:', data.extractedData.tech_specs_2);
+    delete data.extractedData.attributeSection2; // Remove the old unstructured field
+  } else {
+    console.log('❌ No attribute section 2 data found');
   }
   
   return data;
@@ -462,101 +478,103 @@ function autoDetectSKU() {
 function formatSpecification(specText) {
   if (!specText) return {};
   
+  console.log('🔍 Starting to parse specification text...');
+  
   // Clean up the text first
   let cleaned = specText
     .replace(/\s+/g, ' ') // Replace multiple spaces with single space
     .replace(/\n/g, ' ') // Replace newlines with spaces
     .trim();
   
-  // Common specification patterns for Best Buy and other e-commerce sites
-  const specPatterns = [
-    // Display specs
-    /display\s+type\s*:\s*([^,]+)/i,
-    /resolution\s*:\s*([^,]+)/i,
-    /screen\s+size\s+class\s*:\s*([^,]+)/i,
-    /high\s+dynamic\s+range\s*\(hdr\)\s*:\s*([^,]+)/i,
-    /panel\s+type\s*:\s*([^,]+)/i,
-    /backlight\s+type\s*:\s*([^,]+)/i,
-    /refresh\s+rate\s*:\s*([^,]+)/i,
-    
-    // Smart features
-    /smart\s+platform\s*:\s*([^,]+)/i,
-    /featured\s+streaming\s+services\s*:\s*([^,]+)/i,
-    
-    // Connectivity
-    /number\s+of\s+hdmi\s+inputs\s*\(total\)\s*:\s*([^,]+)/i,
-    /tv\s+tuner\s+type\s*:\s*([^,]+)/i,
-    
-    // Voice assistants
-    /works\s+with\s+([^,]+)/i,
-    /voice\s+assistant\s*:\s*([^,]+)/i,
-    
-    // General patterns
-    /([^:]+):\s*([^,]+)/g
+  console.log('🔍 Cleaned text:', cleaned);
+  
+  // Define the specification patterns we're looking for
+  const specDefinitions = [
+    { key: 'Display Type', pattern: /Display\s+Type\s*([^A-Z]+?)(?=Resolution|Screen|High|Panel|Backlight|Refresh|Smart|Featured|Number|TV|Works|Voice|$)/i },
+    { key: 'Resolution', pattern: /Resolution\s*([^A-Z]+?)(?=Screen|High|Panel|Backlight|Refresh|Smart|Featured|Number|TV|Works|Voice|$)/i },
+    { key: 'Screen Size Class', pattern: /Screen\s+Size\s+Class\s*([^A-Z]+?)(?=High|Panel|Backlight|Refresh|Smart|Featured|Number|TV|Works|Voice|$)/i },
+    { key: 'High Dynamic Range (HDR)', pattern: /High\s+Dynamic\s+Range\s*\(HDR\)\s*([^A-Z]+?)(?=Panel|Backlight|Refresh|Smart|Featured|Number|TV|Works|Voice|$)/i },
+    { key: 'Panel Type', pattern: /Panel\s+Type\s*([^A-Z]+?)(?=Backlight|Refresh|Smart|Featured|Number|TV|Works|Voice|$)/i },
+    { key: 'Backlight Type', pattern: /Backlight\s+Type\s*([^A-Z]+?)(?=Refresh|Smart|Featured|Number|TV|Works|Voice|$)/i },
+    { key: 'Refresh Rate', pattern: /Refresh\s+Rate\s*([^A-Z]+?)(?=Smart|Featured|Number|TV|Works|Voice|$)/i },
+    { key: 'Smart Platform', pattern: /Smart\s+Platform\s*([^A-Z]+?)(?=Featured|Number|TV|Works|Voice|$)/i },
+    { key: 'Featured Streaming Services', pattern: /Featured\s+Streaming\s+Services\s*([^A-Z]+?)(?=Number|TV|Works|Voice|$)/i },
+    { key: 'Number of HDMI Inputs (Total)', pattern: /Number\s+of\s+HDMI\s+Inputs\s*\(Total\)\s*([^A-Z]+?)(?=TV|Works|Voice|$)/i },
+    { key: 'TV Tuner Type', pattern: /TV\s+Tuner\s+Type\s*([^A-Z]+?)(?=Works|Voice|$)/i },
+    { key: 'Works With', pattern: /Works\s+With\s*([^A-Z]+?)(?=Voice|$)/i },
+    { key: 'Voice Assistant', pattern: /Voice\s+Assistant\s*([^A-Z]+?)(?=$)/i }
   ];
   
   const techSpecs = {};
   
-  // Try to extract structured data first
-  for (let i = 0; i < specPatterns.length - 1; i++) {
-    const pattern = specPatterns[i];
-    const match = cleaned.match(pattern);
-    if (match) {
-      const key = match[1]?.trim() || '';
-      const value = match[2]?.trim() || '';
-      if (key && value) {
-        // Clean up the key name
-        const cleanKey = key
-          .replace(/\s+/g, ' ')
-          .replace(/\b\w/g, l => l.toUpperCase())
-          .trim();
-        techSpecs[cleanKey] = value;
-      }
-    }
-  }
+  // Simple approach: Split the text and look for specific patterns
+  const text = cleaned.replace('Key Specs', ''); // Remove the header
   
-  // If we didn't find structured data, try to parse the text more intelligently
-  if (Object.keys(techSpecs).length === 0) {
-    // Split by common separators and try to find key-value pairs
-    const parts = cleaned.split(/(?<=[.!?])\s+|(?<=[A-Z])\s+(?=[A-Z][a-z])/);
-    
-    parts.forEach(part => {
-      part = part.trim();
-      if (part.length > 0) {
-        // Look for patterns like "key: value" or "key value"
-        const colonMatch = part.match(/^([^:]+):\s*(.+)$/);
-        if (colonMatch) {
-          const key = colonMatch[1].trim();
-          const value = colonMatch[2].trim();
-          if (key && value) {
-            techSpecs[key] = value;
-          }
-        } else {
-          // Try to split by common words that indicate a specification
-          const specWords = ['display', 'resolution', 'screen', 'size', 'panel', 'refresh', 'smart', 'platform', 'hdmi', 'tuner', 'voice', 'assistant'];
-          for (const word of specWords) {
-            if (part.toLowerCase().includes(word)) {
-              // Extract the value after the spec word
-              const regex = new RegExp(`${word}[^a-zA-Z]*([^.!?]+)`, 'i');
-              const match = part.match(regex);
-              if (match) {
-                const value = match[1].trim();
-                if (value) {
-                  techSpecs[word.charAt(0).toUpperCase() + word.slice(1)] = value;
-                }
-              }
-            }
+  // Define what we're looking for and their patterns
+  const specs = [
+    { name: 'Display Type', pattern: 'Display Type' },
+    { name: 'Resolution', pattern: 'Resolution' },
+    { name: 'Screen Size Class', pattern: 'Screen Size Class' },
+    { name: 'High Dynamic Range (HDR)', pattern: 'High Dynamic Range (HDR)' },
+    { name: 'Panel Type', pattern: 'Panel Type' },
+    { name: 'Backlight Type', pattern: 'Backlight Type' },
+    { name: 'Refresh Rate', pattern: 'Refresh Rate' },
+    { name: 'Smart Platform', pattern: 'Smart Platform' },
+    { name: 'Featured Streaming Services', pattern: 'Featured Streaming Services' },
+    { name: 'Number of HDMI Inputs (Total)', pattern: 'Number of HDMI Inputs (Total)' },
+    { name: 'TV Tuner Type', pattern: 'TV Tuner Type' },
+    { name: 'Works With', pattern: 'Works With' },
+    { name: 'Voice Assistant', pattern: 'Voice Assistant' }
+  ];
+  
+  // Find each specification in the text
+  specs.forEach(spec => {
+    const index = text.indexOf(spec.pattern);
+    if (index !== -1) {
+      // Find the start of the next specification
+      let nextIndex = text.length;
+      for (const nextSpec of specs) {
+        if (nextSpec.pattern !== spec.pattern) {
+          const nextPos = text.indexOf(nextSpec.pattern, index + 1);
+          if (nextPos !== -1 && nextPos < nextIndex) {
+            nextIndex = nextPos;
           }
         }
       }
-    });
-  }
+      
+      // Extract the value (everything between this spec and the next one)
+      const valueStart = index + spec.pattern.length;
+      const value = text.substring(valueStart, nextIndex).trim();
+      
+      if (value) {
+        // Clean up some common parsing issues
+        let cleanValue = value;
+        
+        // Fix "NoLED" -> "No" for HDR
+        if (spec.name === 'High Dynamic Range (HDR)' && value.includes('NoLED')) {
+          cleanValue = 'No';
+        }
+        
+        // Fix "Built-inAmazon Alexa" -> "Built-in Amazon Alexa"
+        if (spec.name === 'Voice Assistant' && value.includes('Built-inAmazon')) {
+          cleanValue = value.replace('Built-inAmazon', 'Built-in Amazon');
+        }
+        
+        // Remove any trailing specification names that got included
+        const nextSpecs = specs.filter(s => s.pattern !== spec.pattern);
+        for (const nextSpec of nextSpecs) {
+          if (cleanValue.endsWith(nextSpec.pattern)) {
+            cleanValue = cleanValue.replace(nextSpec.pattern, '').trim();
+          }
+        }
+        
+        techSpecs[spec.name] = cleanValue;
+        console.log(`✅ Extracted ${spec.name}: ${cleanValue}`);
+      }
+    }
+  });
   
-  // If still no structured data, return the cleaned text as a fallback
-  if (Object.keys(techSpecs).length === 0) {
-    return { "Raw Specifications": cleaned };
-  }
-  
+  console.log('📊 Final tech_specs:', techSpecs);
   return techSpecs;
 }
 
