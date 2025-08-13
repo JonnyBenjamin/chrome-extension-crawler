@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "Zoovu Product Crawler",
+  "version": "1.0",
+  "description": "Build config files by selecting fields from a webpage.",
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "permissions": ["activeTab", "scripting", "storage"],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"]
+    }
+  ]
+}
